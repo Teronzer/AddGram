@@ -191,7 +191,7 @@ rpicam-hello --timeout 5000
 
 Copy `pi/pi_agent.py`, `pi/sensor_adapter.py` and `pi/calibrate.py` to the Pi. Set the backend address with `export ADDGRAM_BACKEND=http://LAPTOP_IP:8000` (or edit `BACKEND_URL` in `pi_agent.py`).
 
-HX711 wiring (BCM numbers): DT -> GPIO 5 (pin 29), SCK -> GPIO 6 (pin 31), VCC -> 3.3 V, GND -> GND. Override with `HX711_DOUT` / `HX711_SCK` env vars. On a Raspberry Pi 5 install `python3-rpi-lgpio` (RPi.GPIO does not work there).
+HX711 wiring (BCM numbers): DT -> GPIO 6 (pin 31), SCK -> GPIO 5 (pin 29), VCC -> 3.3 V, GND -> GND. Override with `HX711_DOUT` / `HX711_SCK` env vars. On a Raspberry Pi 5 install `python3-rpi-lgpio` (RPi.GPIO does not work there).
 
 ```bash
 python3 sensor_adapter.py        # diagnostic: raw values + weight, Ctrl+C to stop
