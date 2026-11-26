@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from .db import init_db, connect
 from .recognition import predict_foods
+from .food_import import import_if_empty
 
 ROOT = Path(__file__).resolve().parent.parent
 app = FastAPI(title="AddGram API", version="0.1.0")
@@ -17,6 +18,7 @@ app.mount("/static", StaticFiles(directory=ROOT / "web"), name="static")
 @app.on_event("startup")
 def startup():
     init_db()
+    import_if_empty()  # fresh clone: fill foods from data/foods.csv
 
 class AddMealRequest(BaseModel):
     class_name: str
@@ -24,6 +26,7 @@ class AddMealRequest(BaseModel):
 
 class SelectFoodRequest(BaseModel):
     class_name: str
+    weight_g: Optional[float] = None  # lets you pick a food without a Pi photo
 
 def get_food(class_name):
     with connect() as c:
@@ -191,20 +194,29 @@ def latest():
 def select_food(req: SelectFoodRequest):
     import json
     with connect() as c:
-        row = c.execute("SELECT value FROM app_state WHERE key='latest'").fetchone()
-        if not row or not row["value"]:
-            raise HTTPException(404, "No measurement yet")
-        result = json.loads(row["value"])
         food = c.execute("SELECT * FROM foods WHERE class_name=?", (req.class_name,)).fetchone()
         if not food:
             raise HTTPException(404, "Food not found in database")
         food = dict(food)
+
+        row = c.execute("SELECT value FROM app_state WHERE key='latest'").fetchone()
+        result = json.loads(row["value"]) if row and row["value"] else None
+        if req.weight_g is not None and req.weight_g > 0:
+            # Manual / live weight from the page overrides the stored one.
+            if result is None:
+                result = {"total_weight_g": None, "predictions": [],
+                          "message": "Food selected manually."}
+            result["weight_g"] = round(req.weight_g, 1)
+        elif result is None:
+            raise HTTPException(400, "Set a weight first (scale or manual) before choosing a food.")
+
         result["selected_class"] = req.class_name
         result["selected_food"] = {
             "class_name": req.class_name, "display_name": food["display_name"],
             "state": food["state"], "nutrition": nutrition_for(food, result["weight_g"])
         }
-        c.execute("UPDATE app_state SET value=? WHERE key='latest'", (json.dumps(result),))
+        c.execute("INSERT OR REPLACE INTO app_state(key,value) VALUES('latest',?)",
+                  (json.dumps(result),))
     return result
 
 @app.post("/meal/add")
