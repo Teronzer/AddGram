@@ -1,8 +1,8 @@
 """HX711 load-cell driver for the AddGram scale.
 
 Wiring (BCM numbering, NOT physical pin numbers):
-    HX711 DT / DOUT -> GPIO 5  (physical pin 29)
-    HX711 SCK       -> GPIO 6  (physical pin 31)
+    HX711 DT / DOUT -> GPIO 6  (physical pin 31)
+    HX711 SCK       -> GPIO 5  (physical pin 29)
     HX711 VCC       -> 3.3 V   (physical pin 1)   keep DOUT at 3.3 V logic!
     HX711 GND       -> GND     (physical pin 6)
 Override the pins with env vars HX711_DOUT / HX711_SCK if you wired differently.
@@ -22,8 +22,8 @@ import RPi.GPIO as GPIO  # on a Pi 5 install python3-rpi-lgpio (drop-in replacem
 
 CALIBRATION_FILE = Path(__file__).with_name("calibration.json")
 
-DOUT_PIN = int(os.getenv("HX711_DOUT", "5"))
-SCK_PIN = int(os.getenv("HX711_SCK", "6"))
+DOUT_PIN = int(os.getenv("HX711_DOUT", "6"))
+SCK_PIN = int(os.getenv("HX711_SCK", "5"))
 
 # Raw values the HX711 returns when the input is saturated / wiring is broken.
 RAW_MAX = 0x7FFFFF
