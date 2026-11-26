@@ -201,7 +201,7 @@ python3 pi_agent.py              # live weight + one photo per new stable item
 python3 pi_agent.py --simulate   # no hardware
 ```
 
-`calibrate.py` saves `calibration.json` next to the adapter. `pi_agent.py` auto-tares at startup (keep only the top plate on the scale), so the plate's weight is cancelled out. A photo is taken once when an item has been stable for 3 readings and weighs at least 10 g; no more photos until the scale is emptied (below 5 g) or the weight changes by 15 g or more. Without a calibration file, auto photos stay off.
+`calibrate.py` saves `calibration.json` next to the adapter. `pi_agent.py` auto-tares at startup (keep only the top plate on the scale), so the plate's weight is cancelled out. A photo is taken when food is added: the weight must be stable for 3 readings and at least 10 g above the baseline (what was already on the scale). Only the added portion is sent as `weight_g` (e.g. 90 g pasta, then 20 g tomatoes on top = entries of 90 g and 20 g); the whole scale reading goes along as `total_weight_g`. Removing food never creates an entry, it only lowers the baseline, and emptying the scale (below 5 g) resets it to 0. Without a calibration file, auto photos stay off.
 
 ## 9. End-to-end test without hardware
 

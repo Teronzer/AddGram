@@ -59,6 +59,13 @@ function displayResult(result) {
       ? manualWeight.toFixed(1)
       : (result.weight_g ?? "—");
 
+  // Portion = food added for this item; total = everything on the scale.
+  const total = Number(result.total_weight_g);
+  $("totalWeight").textContent =
+    Number.isFinite(total) && total > 0 && total !== originalWeight
+      ? `Added on top of other food. Scale total: ${total.toFixed(1)} g`
+      : "";
+
   // Apply the manually entered weight.
   if (manualWeight !== null) {
     current.weight_g = manualWeight;

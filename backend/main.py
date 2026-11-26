@@ -1,3 +1,4 @@
+from typing import Optional
 from pathlib import Path
 import shutil
 import tempfile
@@ -97,9 +98,12 @@ def foods():
 
 @app.post("/measurement")
 async def measurement(
-    weight_g: float = Form(...),
-    image: UploadFile = File(...)
+    weight_g: float = Form(..., description="Portion weight: food added since the last baseline"),
+    image: UploadFile = File(...),
+    total_weight_g: Optional[float] = Form(None, description="Whole scale reading, for display only"),
 ):
+    # weight_g is the portion that was just added (the Pi subtracts what was
+    # already on the scale). Nutrition is always calculated from weight_g.
     if weight_g <= 0 or weight_g > 20000:
         raise HTTPException(
             400,
@@ -158,6 +162,7 @@ async def measurement(
 
     result = {
         "weight_g": round(weight_g, 1),
+        "total_weight_g": round(total_weight_g, 1) if total_weight_g is not None else None,
         "predictions": enriched,
         "selected_class": enriched[0]["class_name"] if enriched else None,
         "message": "Confirm the prediction or select a food manually."

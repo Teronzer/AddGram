@@ -1,9 +1,11 @@
 """AddGram Raspberry Pi agent.
 
-Every second: read the HX711, post the live weight to the backend, and check
-for a tare command. When a NEW item sits stable on the scale it takes ONE
-photo and posts it to /measurement. No photos while the scale is empty or
-while the same item stays on it.
+Every second: read the HX711, post the live (total) weight to the backend,
+and check for a tare command. When food is ADDED and the weight is stable it
+takes ONE photo and posts only the added portion to /measurement:
+90 g pasta, then 20 g tomatoes on top -> two entries, 90 g and 20 g.
+Removing food never creates an entry, it only lowers the baseline.
+No photos while the scale is empty or while nothing changes.
 
     python3 pi_agent.py              # real HX711 + camera
     python3 pi_agent.py --simulate   # fake weights, no hardware needed
@@ -26,8 +28,7 @@ POLL_SECONDS = 1.0
 STABLE_SAMPLES = 3       # readings in a row that must agree (3 s at 1 s polling)
 STABLE_DELTA_G = 2.0     # max spread between those readings
 EMPTY_G = 5.0            # below this the scale counts as empty -> ready for next item
-MIN_ITEM_G = 10.0        # an item must weigh at least this to be photographed
-NEW_ITEM_DELTA_G = 15.0  # stable change this big vs. last photo = new item added/swapped
+MIN_ITEM_G = 10.0        # an added portion must weigh at least this to be photographed
 ZERO_SNAP_G = 1.0        # |w| below this is shown as 0.0
 
 
@@ -59,10 +60,12 @@ def close_camera():
 
 # ---------------------------------------------------------------- backend
 
-def send_measurement(weight_g, image_bytes):
+def send_measurement(portion_g, total_g, image_bytes):
+    """portion_g = food just added (used for nutrition); total_g = whole scale."""
     response = requests.post(
         f"{BACKEND_URL}/measurement",
-        data={"weight_g": str(round(weight_g, 1))},
+        data={"weight_g": str(round(portion_g, 1)),
+              "total_weight_g": str(round(total_g, 1))},
         files={"image": ("capture.jpg", image_bytes, "image/jpeg")},
         timeout=30,
     )
@@ -92,14 +95,14 @@ def get_command():
 # ---------------------------------------------------------------- sensors
 
 class SimulatedSensor:
-    """Cycles: empty 5 s -> 150 g item 8 s -> empty 5 s -> 230 g item 8 s ..."""
+    """Cycles: empty 5 s -> 90 g pasta -> +20 g tomatoes -> 70 g removed -> empty ..."""
     CALIBRATED = True
 
     class HX711NotReady(RuntimeError):
         pass
 
     def __init__(self):
-        pattern = [0.0] * 5 + [150.0] * 8 + [0.0] * 5 + [230.0] * 8
+        pattern = [0.0] * 5 + [90.0] * 6 + [110.0] * 6 + [40.0] * 6
         self._values = itertools.cycle(pattern)
 
     def read_weight_grams(self):
@@ -129,35 +132,45 @@ def tare_with_retry(sensor, not_ready_error):
 # ---------------------------------------------------------------- photo guard
 
 class PhotoGuard:
-    """Decides when to take a photo: once per new, stable, non-zero item."""
+    """Decides when to take a photo and how much food was added.
+
+    `baseline` is the last stable total weight that has been accounted for
+    (0 when the scale is empty). A stable increase of at least MIN_ITEM_G
+    over the baseline is a new portion; a stable decrease (food removed)
+    just moves the baseline down without creating an entry.
+    """
 
     def __init__(self):
         self.recent = deque(maxlen=STABLE_SAMPLES)
-        self.last_photo_weight = None  # None = scale was empty since last photo
+        self.baseline = 0.0
 
     def reset(self):
         self.recent.clear()
-        self.last_photo_weight = None
+        self.baseline = 0.0
 
     def update(self, weight):
-        """Feed one reading; return True when a photo should be taken now."""
+        """Feed one total reading. Returns the added portion in grams when a
+        photo should be taken now, otherwise None."""
         self.recent.append(weight)
 
         if weight < EMPTY_G:
-            self.last_photo_weight = None  # item removed -> ready for the next one
-            return False
+            self.baseline = 0.0  # scale emptied -> start over
+            return None
 
         stable = (len(self.recent) == STABLE_SAMPLES
                   and max(self.recent) - min(self.recent) <= STABLE_DELTA_G)
-        if not stable or weight < MIN_ITEM_G:
-            return False
+        if not stable:
+            return None
 
-        if self.last_photo_weight is None:
-            return True  # first stable item since the scale was empty
-        return abs(weight - self.last_photo_weight) >= NEW_ITEM_DELTA_G
+        added = weight - self.baseline
+        if added >= MIN_ITEM_G:
+            return added
+        if added < -STABLE_DELTA_G:
+            self.baseline = weight  # food removed: lower the baseline, no entry
+        return None
 
-    def photo_taken(self, weight):
-        self.last_photo_weight = weight
+    def portion_logged(self, total_weight):
+        self.baseline = total_weight
 
 
 # ---------------------------------------------------------------- main loop
@@ -211,18 +224,19 @@ def main():
                     weight = 0.0
                 send_live_weight(weight)
 
-                if guard.update(weight):
+                portion = guard.update(weight)
+                if portion is not None:
                     if use_camera:
-                        print(f"Stable new item: {weight:.1f} g -> taking photo")
+                        print(f"Added {portion:.1f} g (scale total {weight:.1f} g) -> taking photo")
                         try:
-                            send_measurement(weight, capture_jpeg())
+                            send_measurement(portion, weight, capture_jpeg())
                         except Exception as exc:
                             # Not retried for the same item, so a broken camera
                             # can't flood the backend. Lift and replace to retry.
                             print("Measurement upload failed:", exc)
                     else:
-                        print(f"Stable new item: {weight:.1f} g (camera off, no photo)")
-                    guard.photo_taken(weight)
+                        print(f"Added {portion:.1f} g (scale total {weight:.1f} g), camera off, no photo")
+                    guard.portion_logged(weight)
 
             # Keep a steady 1 s period regardless of how long the read took.
             time.sleep(max(0.0, POLL_SECONDS - (time.monotonic() - loop_start)))
