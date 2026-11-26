@@ -1,0 +1,1 @@
+Copy your trained best.pt into this folder and name it best.pt.

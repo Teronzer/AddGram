@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AddGram - Smart Nutrition Scale</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <p class="eyebrow">SMART NUTRITION SCALE</p>
+      <h1>AddGram</h1>
+    </div>
+    <span id="status">Connecting...</span>
+  </header>
+
+
+<section class="panel">
+  <h2>Current measurement</h2>
+
+  <div class="weight">
+    <span id="weight">—</span>
+    <small>g</small>
+  </div>
+
+  <p id="hint">Place food on the scale.</p>
+
+  <p class="muted">
+    Live scale reading:
+    <strong><span id="liveWeight">—</span> g</strong>
+    <span id="liveStatus">Connecting...</span>
+  </p>
+
+  <label for="manualWeight">Enter weight manually (g)</label>
+  <input id="manualWeight" type="number" min="1" max="20000" step="1"
+         placeholder="e.g. 150">
+
+  <div class="actions">
+    <button id="setWeight">Update weight</button>
+    <button id="tare">Tare</button>
+  </div>
+</section>
+
+  <section class="panel">
+    <h2>Identify your food</h2>
+    <p class="muted">
+      Take a picture of your food or choose an image from your phone.
+    </p>
+
+    <input
+      id="imageInput"
+      type="file"
+      accept="image/*"
+      capture="environment"
+      hidden
+    >
+
+    <button id="choosePhoto" class="upload-button">
+      📷 Take a photo or choose an image
+    </button>
+
+    <div id="previewArea" hidden>
+      <img id="imagePreview" alt="Selected food preview">
+      <p id="fileName" class="muted"></p>
+      <button id="identifyButton" class="primary">
+        Identify food
+      </button>
+    </div>
+
+    <p id="uploadStatus" class="muted" aria-live="polite"></p>
+
+    <div class="result-area">
+      <h3>Recognition result</h3>
+      <p id="foodName">No food identified yet</p>
+      <p id="confidence" class="muted"></p>
+
+      <label for="foodSelect">Correct food if needed</label>
+      <select id="foodSelect">
+        <option value="">Choose a food...</option>
+      </select>
+
+      <button id="confirm">Use selected food</button>
+      <div id="nutrition" class="macros"></div>
+      <button id="add" class="primary" disabled>Add to meal</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Meal</h2>
+    <div id="mealItems"></div>
+    <div id="totals" class="macros"></div>
+  </section>
+</main>
+
+<script src="/static/app.js?v=2"></script>
+</body>
+</html>

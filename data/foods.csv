@@ -1,0 +1,19 @@
+food_id,name,calories,protein,carbs,fat
+potato_raw,Potato,81.0,2.27,17.77,0.36
+sweet_potato_raw,Sweet potato,77.4,1.58,17.33,0.38
+rice_raw,Rice,369.6,7.04,80.31,1.03
+banana_raw,Banana,88.0,0.74,23.0,0.29
+apple_raw,Apple,54.9,0.13,14.77,0.15
+orange_raw,Orange,47.0,0.91,11.8,0.15
+strawberry_raw,Strawberry,32.7,0.64,7.96,0.22
+tomato_raw,Tomato,27.0,0.83,5.51,0.63
+cucumber_raw,Cucumber,13.9,0.62,2.95,0.18
+carrot_raw,Carrot,45.0,0.94,10.27,0.35
+broccoli_raw,Broccoli,32.0,2.57,6.27,0.34
+bell_pepper_raw,Bell pepper,27.0,0.9,6.65,0.13
+onion_raw,Onion,36.0,0.83,8.61,0.05
+"chicken_breast_cooked, braised",Chicken breast,166.0,32.1,0.0,3.24
+"beef_cooked, roasted",Beef tenderloin,176.0,27.7,0.0,6.36
+salmon_raw,Atlantic salmon,203.1,20.32,0.0,13.11
+egg_whole,Egg,147.0,12.4,0.96,9.96
+cheese_as sold,Cheddar cheese,408.0,23.3,2.44,34.0

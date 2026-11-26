@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local data / generated
+*.db
+pi/calibration.json
+
+# Models and datasets (too big for git; share separately)
+*.pt
+datasets/
+runs/
