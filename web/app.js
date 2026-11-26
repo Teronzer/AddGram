@@ -10,7 +10,11 @@ async function api(path, options = {}) {
   const response = await fetch(path, options);
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    // FastAPI errors look like {"detail": "..."}; show just the message.
+    const text = await response.text();
+    let message = text;
+    try { message = JSON.parse(text).detail || text; } catch (_) {}
+    throw new Error(typeof message === "string" ? message : JSON.stringify(message));
   }
 
   return response.json();
@@ -268,16 +272,30 @@ $("tare").onclick = async () => {
 $("confirm").onclick = async () => {
   const className = $("foodSelect").value;
 
-  if (!className || !current) return;
+  if (!className) {
+    $("uploadStatus").textContent = "Choose a food from the list first.";
+    return;
+  }
+
+  // Use the manual weight, the measured portion, or the live scale reading.
+  const weight = manualWeight ?? current?.weight_g ?? liveWeight;
+
+  if (!(weight > 0)) {
+    $("uploadStatus").textContent =
+      "Set a weight first: put food on the scale or enter it manually.";
+    return;
+  }
 
   try {
     const result = await api("/select", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ class_name: className })
+      body: JSON.stringify({ class_name: className, weight_g: weight })
     });
 
+    manualWeight = null;  // the weight is now stored in the result
     displayResult(result);
+    $("uploadStatus").textContent = "Food selected. Press \"Add to meal\".";
   } catch (error) {
     $("uploadStatus").textContent = error.message;
   }
@@ -315,8 +333,10 @@ async function start() {
     await loadFoods();
     await refresh();
     await refreshLiveWeight();
+    await loadMeal();
 
     setInterval(refresh, 1500);
+    setInterval(loadMeal, 5000);
     setInterval(refreshLiveWeight, 1000);
 
   } catch (error) {

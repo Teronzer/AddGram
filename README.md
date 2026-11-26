@@ -67,7 +67,7 @@ Edit `data/foods.csv`. Keep `class_name` exactly the same as the corresponding Y
 python scripts/import_foods.py
 ```
 
-You can rerun the importer after editing the CSV; it updates matching food rows. Do not mix raw and cooked nutrition values. Verify every value against its cited source (e.g. USDA FoodData Central) before relying on it.
+The backend also imports the CSV automatically on startup when the foods table is empty (for example right after a fresh clone). Rerun the importer after editing the CSV; it updates matching food rows. Do not mix raw and cooked nutrition values. Verify every value against its cited source (e.g. USDA FoodData Central) before relying on it.
 
 ## 5. Start the backend
 
