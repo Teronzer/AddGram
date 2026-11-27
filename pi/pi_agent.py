@@ -6,6 +6,8 @@ takes ONE photo and posts only the added portion to /measurement:
 90 g pasta, then 20 g tomatoes on top -> two entries, 90 g and 20 g.
 Removing food never creates an entry, it only lowers the baseline.
 No photos while the scale is empty or while nothing changes.
+The web page can also ask for a photo right now (TEMPORARY test button,
+"photo" command), see take_manual_photo().
 
     python3 pi_agent.py              # real HX711 + camera
     python3 pi_agent.py --simulate   # fake weights, no hardware needed
@@ -52,6 +54,16 @@ def capture_jpeg():
     return stream.getvalue()
 
 
+def fake_jpeg(weight):
+    """--simulate only: a plain coloured picture instead of a camera photo."""
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (640, 480), (230, 160, 60))
+    ImageDraw.Draw(img).text((20, 20), f"SIMULATED {weight or 0:.1f} g", fill=(0, 0, 0))
+    stream = io.BytesIO()
+    img.save(stream, format="JPEG")
+    return stream.getvalue()
+
+
 def close_camera():
     if _camera is not None:
         _camera.stop()
@@ -60,17 +72,33 @@ def close_camera():
 
 # ---------------------------------------------------------------- backend
 
-def send_measurement(portion_g, total_g, image_bytes):
+def send_measurement(portion_g, total_g, image_bytes, source="pi-auto"):
     """portion_g = food just added (used for nutrition); total_g = whole scale."""
     response = requests.post(
         f"{BACKEND_URL}/measurement",
         data={"weight_g": str(round(portion_g, 1)),
-              "total_weight_g": str(round(total_g, 1))},
+              "total_weight_g": str(round(total_g, 1)),
+              "source": source},
         files={"image": ("capture.jpg", image_bytes, "image/jpeg")},
         timeout=30,
     )
     response.raise_for_status()
     print("Backend result:", response.json())
+
+
+def send_photo_only(total_g, image_bytes):
+    """Photo without a meal entry (manual photo of an empty scale)."""
+    data = {"source": "pi-manual"}
+    if total_g is not None:
+        data["total_weight_g"] = str(round(total_g, 1))
+    response = requests.post(
+        f"{BACKEND_URL}/photo",
+        data=data,
+        files={"image": ("capture.jpg", image_bytes, "image/jpeg")},
+        timeout=30,
+    )
+    response.raise_for_status()
+    print("Photo saved on backend (no meal entry).")
 
 
 def send_live_weight(weight_g):
@@ -172,6 +200,35 @@ class PhotoGuard:
     def portion_logged(self, total_weight):
         self.baseline = total_weight
 
+    def manual_portion(self, weight):
+        """Weight to log for a photo requested from the web page.
+        Food added since the baseline -> that portion; nothing new added ->
+        the whole scale total; empty scale -> None (photo only, no entry)."""
+        if weight is None or weight < EMPTY_G:
+            return None
+        added = weight - self.baseline
+        return added if added >= EMPTY_G else weight
+
+
+# ---------------------------------------------------------------- manual photo
+
+def take_manual_photo(guard, weight, capture, weights_valid):
+    """TEMPORARY (testing): photo requested by the "Take photo now" button.
+    Remove together with that button during cleanup."""
+    portion = guard.manual_portion(weight) if weights_valid else None
+    shown = f"{weight:.1f} g" if weight is not None else "unknown"
+    print(f"Photo requested from web page (scale total {shown}) -> taking photo")
+    try:
+        image = capture(weight)
+        if portion is None:
+            send_photo_only(weight if weights_valid else None, image)
+        else:
+            print(f"Logging {portion:.1f} g from the manual photo")
+            send_measurement(portion, weight, image, source="pi-manual")
+            guard.portion_logged(weight)
+    except Exception as exc:
+        print("Manual photo failed:", exc)
+
 
 # ---------------------------------------------------------------- main loop
 
@@ -188,7 +245,10 @@ def main():
         import sensor_adapter as sensor
         not_ready_error = sensor.HX711NotReady
 
-    use_camera = not args.no_camera
+    camera_present = not args.no_camera
+    use_camera = camera_present
+    # In --simulate there is no camera: send a generated picture instead.
+    capture = fake_jpeg if args.simulate else (lambda _weight: capture_jpeg())
     if not sensor.CALIBRATED and use_camera:
         print("Scale NOT calibrated -> auto photos disabled until you run calibrate.py.")
         use_camera = False
@@ -203,7 +263,8 @@ def main():
         while True:
             loop_start = time.monotonic()
 
-            if get_command() == "tare":
+            command = get_command()
+            if command == "tare":
                 tare_with_retry(sensor, not_ready_error)
                 guard.reset()
 
@@ -229,14 +290,22 @@ def main():
                     if use_camera:
                         print(f"Added {portion:.1f} g (scale total {weight:.1f} g) -> taking photo")
                         try:
-                            send_measurement(portion, weight, capture_jpeg())
+                            send_measurement(portion, weight, capture(weight))
                         except Exception as exc:
                             # Not retried for the same item, so a broken camera
                             # can't flood the backend. Lift and replace to retry.
                             print("Measurement upload failed:", exc)
+                        if command == "photo":
+                            command = ""  # this automatic photo already covers it
                     else:
                         print(f"Added {portion:.1f} g (scale total {weight:.1f} g), camera off, no photo")
                     guard.portion_logged(weight)
+
+            if command == "photo":  # TEMPORARY test button on the web page
+                if camera_present:
+                    take_manual_photo(guard, weight, capture, sensor.CALIBRATED)
+                else:
+                    print("Photo requested, but the camera is off (--no-camera).")
 
             # Keep a steady 1 s period regardless of how long the read took.
             time.sleep(max(0.0, POLL_SECONDS - (time.monotonic() - loop_start)))

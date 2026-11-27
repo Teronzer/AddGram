@@ -12,3 +12,6 @@ pi/calibration.json
 *.pt
 datasets/
 runs/
+
+# Latest photo kept by the backend
+backend/captures/

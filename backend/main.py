@@ -3,7 +3,7 @@ from pathlib import Path
 import shutil
 import tempfile
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -12,6 +12,9 @@ from .recognition import predict_foods
 from .food_import import import_if_empty
 
 ROOT = Path(__file__).resolve().parent.parent
+# Only the newest photo is kept (overwritten each time); not tracked by git.
+CAPTURES_DIR = Path(__file__).resolve().parent / "captures"
+IMAGE_SUFFIXES = [".jpg", ".jpeg", ".png", ".webp"]
 app = FastAPI(title="AddGram API", version="0.1.0")
 app.mount("/static", StaticFiles(directory=ROOT / "web"), name="static")
 
@@ -99,11 +102,103 @@ def foods():
         rows = c.execute("SELECT class_name, display_name, state FROM foods ORDER BY display_name").fetchall()
     return [dict(r) for r in rows]
 
+async def receive_image(image: UploadFile) -> Path:
+    """Validate an uploaded image and copy it to a temp file. Caller deletes it."""
+    if image.content_type and not image.content_type.startswith("image/"):
+        raise HTTPException(400, "Please upload an image file")
+
+    suffix = Path(image.filename or "capture.jpg").suffix.lower()
+    if suffix not in IMAGE_SUFFIXES:
+        raise HTTPException(400, "Supported image formats are JPG, PNG and WEBP")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(image.file, tmp)
+        image_path = Path(tmp.name)
+    await image.close()
+
+    size = image_path.stat().st_size
+    if size == 0 or size > 10 * 1024 * 1024:
+        image_path.unlink(missing_ok=True)
+        raise HTTPException(400, "The image is empty" if size == 0 else "Image must be smaller than 10 MB")
+    return image_path
+
+
+def save_latest_photo(image_path: Path, source: str, weight_g=None, total_weight_g=None):
+    """Keep a copy of the newest photo so the web page can show it."""
+    import json
+    import time
+
+    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+    for old in CAPTURES_DIR.glob("latest.*"):
+        old.unlink(missing_ok=True)
+    target = CAPTURES_DIR / f"latest{image_path.suffix}"
+    shutil.copyfile(image_path, target)
+
+    info = {
+        "ts": time.time(),
+        "file": target.name,
+        "source": source,
+        "weight_g": round(weight_g, 1) if weight_g is not None else None,
+        "total_weight_g": round(total_weight_g, 1) if total_weight_g is not None else None,
+    }
+    with connect() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO app_state(key, value) VALUES('latest_photo', ?)",
+            (json.dumps(info),)
+        )
+    return info
+
+
+def latest_photo_info():
+    import json
+    with connect() as c:
+        row = c.execute("SELECT value FROM app_state WHERE key='latest_photo'").fetchone()
+    info = json.loads(row["value"]) if row and row["value"] else None
+    if not info or not (CAPTURES_DIR / info["file"]).exists():
+        return None
+    # ?v= changes with every new photo so the browser never shows a cached old one.
+    return {**info, "url": f"/photo/latest?v={int(info['ts'] * 1000)}"}
+
+
+@app.get("/photo/latest")
+def photo_latest():
+    info = latest_photo_info()
+    if info is None:
+        raise HTTPException(404, "No photo yet")
+    return FileResponse(CAPTURES_DIR / info["file"], headers={"Cache-Control": "no-store"})
+
+
+@app.post("/photo")
+async def photo_only(
+    image: UploadFile = File(...),
+    total_weight_g: Optional[float] = Form(None),
+    source: str = Form("pi-manual"),
+):
+    """Store a photo without recognition or a meal entry
+    (the Pi uses this for a manual photo when the scale is empty)."""
+    image_path = await receive_image(image)
+    try:
+        info = save_latest_photo(image_path, source, None, total_weight_g)
+    finally:
+        image_path.unlink(missing_ok=True)
+    return {"saved": True, "photo": info}
+
+
+# TEMPORARY (testing): lets the web page ask the Pi to take a photo now.
+# Remove together with the "Take photo now" button during cleanup.
+@app.post("/photo/take")
+def take_photo():
+    with connect() as c:
+        c.execute("UPDATE app_state SET value='photo' WHERE key='pending_command'")
+    return {"queued": True, "command": "photo"}
+
+
 @app.post("/measurement")
 async def measurement(
     weight_g: float = Form(..., description="Portion weight: food added since the last baseline"),
     image: UploadFile = File(...),
     total_weight_g: Optional[float] = Form(None, description="Whole scale reading, for display only"),
+    source: str = Form("upload", description="pi-auto, pi-manual or upload (phone page)"),
 ):
     # weight_g is the portion that was just added (the Pi subtracts what was
     # already on the scale). Nutrition is always calculated from weight_g.
@@ -113,42 +208,14 @@ async def measurement(
             "Weight must be greater than zero and no more than 20000 g"
         )
 
-    if image.content_type and not image.content_type.startswith("image/"):
-        raise HTTPException(400, "Please upload an image file")
-
-    suffix = Path(image.filename or "capture.jpg").suffix.lower()
-
-    if suffix not in [".jpg", ".jpeg", ".png", ".webp"]:
-        raise HTTPException(
-            400,
-            "Supported image formats are JPG, PNG and WEBP"
-        )
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(image.file, tmp)
-        image_path = Path(tmp.name)
-
+    image_path = await receive_image(image)
     try:
-        if image_path.stat().st_size == 0:
-            raise HTTPException(400, "The uploaded image is empty")
-
-        if image_path.stat().st_size > 10 * 1024 * 1024:
-            raise HTTPException(400, "Image must be smaller than 10 MB")
-
+        save_latest_photo(image_path, source, weight_g, total_weight_g)
         predictions = predict_foods(str(image_path))
-
-    except HTTPException:
-        raise
-
     except Exception as error:
-        raise HTTPException(
-            500,
-            f"Food recognition failed: {str(error)}"
-        )
-
+        raise HTTPException(500, f"Food recognition failed: {error}")
     finally:
         image_path.unlink(missing_ok=True)
-        await image.close()
 
     enriched = []
 
@@ -188,7 +255,8 @@ def latest():
         row = c.execute("SELECT value FROM app_state WHERE key='latest'").fetchone()
         cmd = c.execute("SELECT value FROM app_state WHERE key='pending_command'").fetchone()
     return {"result": json.loads(row["value"]) if row and row["value"] else None,
-            "pending_command": cmd["value"] if cmd else ""}
+            "pending_command": cmd["value"] if cmd else "",
+            "photo": latest_photo_info()}
 
 @app.post("/select")
 def select_food(req: SelectFoodRequest):

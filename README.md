@@ -203,6 +203,8 @@ python3 pi_agent.py --simulate   # no hardware
 
 `calibrate.py` saves `calibration.json` next to the adapter. `pi_agent.py` auto-tares at startup (keep only the top plate on the scale), so the plate's weight is cancelled out. A photo is taken when food is added: the weight must be stable for 3 readings and at least 10 g above the baseline (what was already on the scale). Only the added portion is sent as `weight_g` (e.g. 90 g pasta, then 20 g tomatoes on top = entries of 90 g and 20 g); the whole scale reading goes along as `total_weight_g`. Removing food never creates an entry, it only lowers the baseline, and emptying the scale (below 5 g) resets it to 0. Without a calibration file, auto photos stay off.
 
+The newest photo (from the Pi or uploaded on the page) is kept in `backend/captures/` and shown on the page under "Last scale photo" (`GET /photo/latest`). The orange "Take photo now (temporary test)" button sends a `photo` command; the Pi then takes a photo at once and logs the food added since the baseline, or the whole scale total if nothing new was added. With an empty scale it only saves the photo, with no meal entry. This button is for testing and will be removed in the final cleanup.
+
 ## 9. End-to-end test without hardware
 
 1. Start backend.

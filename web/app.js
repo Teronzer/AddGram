@@ -5,6 +5,35 @@ let foods = [];
 let selectedImage = null;
 let manualWeight = null;
 let liveWeight = null;
+let shownPhotoUrl = null;
+let photoRequestedAt = null;  // TEMPORARY: for the "Take photo now" button
+
+const PHOTO_SOURCES = {
+  "pi-auto": "taken automatically by the scale",
+  "pi-manual": "taken with the test button",
+  "upload": "uploaded from this page"
+};
+
+function showScalePhoto(photo) {
+  if (!photo || photo.url === shownPhotoUrl) return;
+  shownPhotoUrl = photo.url;
+
+  $("scalePhoto").src = photo.url;
+  $("scalePhoto").hidden = false;
+
+  const time = new Date(photo.ts * 1000).toLocaleTimeString();
+  const parts = [time, PHOTO_SOURCES[photo.source] || photo.source];
+  parts.push(photo.weight_g != null ? `logged ${photo.weight_g} g` : "nothing logged");
+  if (photo.total_weight_g != null) parts.push(`scale total ${photo.total_weight_g} g`);
+  $("scalePhotoInfo").textContent = parts.join(" · ");
+
+  // Any new photo after pressing the test button counts as its answer.
+  if (photoRequestedAt !== null) {
+    photoRequestedAt = null;
+    $("takePhoto").disabled = false;
+    $("takePhotoStatus").textContent = "Photo received.";
+  }
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
@@ -167,6 +196,16 @@ async function refresh() {
       displayResult(data.result);
     }
 
+    showScalePhoto(data.photo);
+
+    // TEMPORARY: give up waiting if the Pi never answered.
+    if (photoRequestedAt !== null && Date.now() - photoRequestedAt > 20000) {
+      photoRequestedAt = null;
+      $("takePhoto").disabled = false;
+      $("takePhotoStatus").textContent =
+        "No photo arrived. Is pi_agent.py running with the camera on?";
+    }
+
   } catch (error) {
     $("status").textContent = "Backend unavailable";
   }
@@ -255,6 +294,20 @@ $("identifyButton").onclick = async () => {
     $("uploadStatus").textContent = error.message;
   } finally {
     $("identifyButton").disabled = false;
+  }
+};
+
+// TEMPORARY test button: ask the Pi to take a photo now.
+// Remove during the final cleanup (see the note in index.html).
+$("takePhoto").onclick = async () => {
+  try {
+    $("takePhoto").disabled = true;
+    await api("/photo/take", { method: "POST" });
+    photoRequestedAt = Date.now();
+    $("takePhotoStatus").textContent = "Asked the scale for a photo...";
+  } catch (error) {
+    $("takePhoto").disabled = false;
+    $("takePhotoStatus").textContent = error.message;
   }
 };
 

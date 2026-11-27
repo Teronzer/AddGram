@@ -45,6 +45,18 @@
 </section>
 
   <section class="panel">
+    <h2>Last scale photo</h2>
+    <img id="scalePhoto" alt="Latest photo from the scale camera" hidden>
+    <p id="scalePhotoInfo" class="muted">No photo from the scale yet.</p>
+
+    <!-- TEMPORARY test button: asks the Pi to take a photo right now.
+         Remove (with /photo/take in backend/main.py and the "photo" command
+         in pi/pi_agent.py) during the final cleanup. -->
+    <button id="takePhoto" class="temp-button">📸 Take photo now (temporary test)</button>
+    <p id="takePhotoStatus" class="muted" aria-live="polite"></p>
+  </section>
+
+  <section class="panel">
     <h2>Identify your food</h2>
     <p class="muted">
       Take a picture of your food or choose an image from your phone.
@@ -95,6 +107,6 @@
   </section>
 </main>
 
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>
