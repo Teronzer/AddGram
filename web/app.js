@@ -3,7 +3,10 @@ const $ = id => document.getElementById(id);
 let current = null;
 let foods = [];
 let selectedImage = null;
+// Weight chosen with "Update weight" (typed or taken from the live scale).
+// It stays until the next new measurement arrives from the Pi or the page.
 let manualWeight = null;
+let lastResultJson = null;  // last /latest result already shown
 let liveWeight = null;
 let shownPhotoUrl = null;
 let photoRequestedAt = null;  // TEMPORARY: for the "Take photo now" button
@@ -192,7 +195,13 @@ async function refresh() {
 
     $("status").textContent = "Connected";
 
-    if (data.result) {
+    // Only redraw when the result actually changed (a new Pi photo, a food
+    // selection...). Redrawing on every poll used to throw away the weight
+    // set with "Update weight" and put the old Pi weight back.
+    const resultJson = JSON.stringify(data.result);
+    if (data.result && resultJson !== lastResultJson) {
+      if (lastResultJson !== null) manualWeight = null;  // new measurement wins
+      lastResultJson = resultJson;
       displayResult(data.result);
     }
 
@@ -421,12 +430,16 @@ $("setWeight").onclick = () => {
     }
 
     weight = liveWeight;
-    manualWeight = null;
+    manualWeight = weight;  // keep it, the next poll must not undo it
     $("hint").textContent = "Live scale weight selected.";
   }
 
-  if (!current) current = {};
-
-  current.weight_g = weight;
-  $("weight").textContent = weight.toFixed(1);
+  if (lastResultJson && lastResultJson !== "null") {
+    // Redraw from a fresh copy so the nutrition is rescaled to the new weight.
+    displayResult(JSON.parse(lastResultJson));
+  } else {
+    if (!current) current = {};
+    current.weight_g = weight;
+    $("weight").textContent = weight.toFixed(1);
+  }
 };
